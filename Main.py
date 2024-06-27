@@ -3,7 +3,7 @@ from flask import Flask, request
 from flask_cors import CORS
 from flask.json import jsonify
 from xml.etree import ElementTree as ET
-from xml.dom import minidom
+import json
 from ClaseLibro import Libro
 
 #CREANDO API
@@ -12,6 +12,7 @@ cors = CORS(app)
 
 #LISTAS GLOBALES
 lista_de_libros = []
+lista_de_ids = []
 
 #ENDPOINT DE INICIO
 @app.route('/')
@@ -61,7 +62,7 @@ def cargar_libros():
                 file.write(xml_entrada)
                 file.close()
         return jsonify({
-            'message' : 'Productos cargados correctamente',
+            'message' : 'Libros cargados correctamente',
             'status' : 200
         }), 200
 
@@ -90,9 +91,82 @@ def ver_libros():
             'editorial' : libro.editorial,
             'copias' : libro.copias
         })
+        lista_de_ids.append(libro.id)
+
+    crear_json(diccionario_salida)
+
     return jsonify(diccionario_salida), 200
 
-#MANEJO GENERICO DE ERRORES
+def crear_json(datos):
+    with open('./temp/Salida.json', 'w', encoding='utf-8') as file:
+        json.dump(datos, file, ensure_ascii=False, indent=4)
+
+#ENDPOINT DE VER LIBRO POR ID ----------------------------------------------------------------------------------------------------
+@app.route('/verLibro/<string:id>', methods=['GET'])
+def buscar_libro(id):
+
+    with open('./temp/Salida.json', 'r', encoding='utf-8') as file:
+        data = json.load(file)
+
+    libro = next((item for item in data['libros'] if item['id'] == id), None)
+    libroRaw = str(libro)
+    print(libroRaw)
+
+    if libroRaw == "None":
+        return jsonify({
+            'message' : 'La ID no existe!',
+            'status' : 404
+        }), 404
+    else:
+        xml_resultado = json_a_xml(libro, root_tag='Libro')
+
+        return f"<?xml version='1.0' encoding='UTF-8'?> \n {xml_resultado}" , 200
+    
+def json_a_xml(json_data, root_tag='root'):
+    root = ET.Element(root_tag)
+
+    def construir_xml(elemento, data):
+        if isinstance(data, dict):
+            for clave, valor in data.items():
+                sub_elemento = ET.SubElement(elemento, clave)
+                construir_xml(sub_elemento, valor)
+        elif isinstance(data, list):
+            for item in data:
+                sub_elemento = ET.SubElement(elemento, 'libro')
+                construir_xml(sub_elemento, item)
+        else:
+            elemento.text = str(data)
+
+    construir_xml(root, json_data)
+
+    tree = ET.ElementTree(root)
+
+    xml_str = ET.tostring(root, encoding='unicode')
+
+    return xml_str
+    
+#ENDPOINT DE VER CATEGORIA ----------------------------------------------------------------------------------------------------------------------------------
+@app.route('/libros/<string:categoria>', methods=['GET'])
+def buscar_categoria(categoria):
+
+    libros_encontrados = []
+
+    with open('./temp/Salida.json', 'r', encoding='utf-8') as file:
+        data = json.load(file)
+
+    for libro in data['libros']:
+        if libro['categoria'].lower() == categoria.lower():
+            libros_encontrados.append(libro)
+
+    if libros_encontrados:
+        return jsonify(libros_encontrados)
+    else:
+        return jsonify({
+            'message' : 'ERROR Categoria no encontrada',
+            'status' : 404
+        }), 404
+
+#MANEJO GENERICO DE ERRORES------------------------------------------------------------------------------------------------------
 @app.errorhandler(404)
 def page_not_found(e):
     return jsonify({
